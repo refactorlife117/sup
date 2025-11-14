@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Post {
@@ -22,10 +21,288 @@ model User {
   email String  @unique
   name  String?
   posts Post[]
+
+  landlord_tenancies  Tenancy[] @relation("LandlordTenancy")
+  tenant_tenancies    Tenancy[] @relation("TenantTenancy")
 }
 
 model Province {
-  id      Int    @id @default(autoincrement())
-  name    String @unique
-  address String @default("")
+  id                              Int      @id @default(autoincrement())
+  code                            String   @unique // "ON", "BC", "QC"
+  name                            String   @unique // "Ontario", "British Columbia"
+  
+  // Regulatory Body Info
+  regulatory_body_name            String   // "Landlord and Tenant Board"
+  regulatory_body_acronym         String?  // "LTB", "RTB", "TAL"
+  key_legislation                 String   // "Residential Tenancies Act, 2006"
+  
+  // Rent Increase Rules
+  rent_increase_notice_days       Int      // Days of notice required (e.g., 90 for ON, 90 for BC)
+  rent_increase_cap_percentage    Float?   // Annual cap percentage (null if no cap)
+  rent_increase_frequency_days    Int      @default(365) // How often increases allowed
+  rent_increase_form_code         String?  // "N1", "RTB-7", "Form D"
+  has_above_guideline_process     Boolean  @default(false)
+  above_guideline_form_code       String?  // "L5", "RTB-52"
+  
+  // Non-Payment Notice Rules
+  non_payment_notice_days         Int      // Days to pay or vacate (e.g., 14 for ON, 10 for BC)
+  non_payment_remedy_days         Int?     // Days to remedy before eviction (e.g., 5 for BC)
+  non_payment_form_code           String?  // "N4", "RTB-30", "Form E"
+  
+  // Eviction/Application Rules
+  eviction_application_form_code  String?  // "L1", "L2" for ON
+  eviction_filing_fee             Float?   // Fee to file eviction
+  
+  // Landlord Personal Use Rules
+  landlord_use_notice_days        Int     
+  landlord_use_form_code          String?  // "N12", "RTB-8"
+  landlord_use_compensation_months Int?    // Months of compensation required
+  
+  // Tenant Termination Rules
+  tenant_termination_notice_days  Int       
+  tenant_termination_form_code    String?  // "N9", "RTB-33"
+  
+  // Lease Agreement
+  has_standard_lease_form         Boolean  @default(false)
+  standard_lease_form_code        String?  //  "Standard Lease", "RTB-1", "Form J"
+  lease_form_mandatory            Boolean  @default(false)
+  
+  // Service/Delivery Methods
+  allows_electronic_service       Boolean  @default(false)
+  requires_registered_mail        Boolean  @default(false)
+  allows_in_person_service        Boolean  @default(true)
+  requires_proof_of_service       Boolean  @default(true)
+  
+  // Dispute Resolution
+  dispute_filing_fee              Float?
+  has_online_dispute_portal       Boolean  @default(false)
+  dispute_portal_url              String?
+  
+  // System Fields
+  is_active                       Boolean  @default(true)
+  created_at                      DateTime @default(now())
+  updated_at                      DateTime @updatedAt
+  
+  // Relationships
+  tenancies                       Tenancy[]
+  property                        Property[]
+  @@index([code])
+  @@index([is_active])
+}
+
+model Property{
+  id Int @id @default(autoincrement())
+  property_name String @default("")
+  street_name String @default("")
+  street_number String @default("")
+  city String @default("")
+  postal_code String 
+  unit Int 
+  rooms Int
+  map_coordinates_url String @default("")
+  filled_rooms Int @default(0)
+  availability Boolean @default(true)
+  is_condominium Boolean @default(false)
+  
+
+  province_id  Int
+  province Province @relation(fields:[province_id],references:[id])
+  tenancy  Tenancy[]
+}
+
+model Tenancy {
+  id                        Int      @id @default(autoincrement())
+  province_id               Int
+  province                  Province @relation(fields: [province_id], references: [id])
+  // Parties
+  landlord_id               Int
+  landlord                  User @relation("LandlordTenancy", fields:[landlord_id], references:[id])
+  tenant_id                 Int
+  tenant                    User @relation("TenantTenancy", fields:[tenant_id], references:[id])
+  property_id               Int
+  property                  Property @relation(fields:[property_id],references:[id])
+  // Property Details
+  property_address          String
+  unit_number               String?
+  
+  // Rent Details
+  rent_amount               Float
+  rent_due_day              Int      // Day of month (1-31)
+  
+  // Lease Dates
+  lease_start_date          DateTime
+  lease_end_date            DateTime?
+  
+  // Tenant Preferences
+  electronic_service_consent Boolean @default(false) // RTB Rule 3.1 consent
+  auto_pay_enabled          Boolean  @default(false)
+  
+  // Current Status
+  status                    TenancyStatus @default(ACTIVE)
+  current_balance           Float    @default(0) // Negative = arrears
+  
+  // System Fields
+  created_at                DateTime @default(now())
+  updated_at                DateTime @updatedAt
+  
+  // Relationships
+  rent_payments             RentPayment[]
+  compliance_events         ComplianceEvent[]
+  
+  @@index([province_id])
+  @@index([landlord_id])
+  @@index([tenant_id])
+  @@index([status])
+}
+
+enum TenancyStatus {
+  ACTIVE              // Normal, rent current
+  OVERDUE             // Rent past due, no notice yet
+  NOTICE_ISSUED       // N4/RTB-30 issued
+  PAYMENT_PLAN        // On payment plan
+  DISPUTE_PENDING     // Tenant filed dispute
+  EVICTION_FILED      // L1/L2 filed with LTB
+  TERMINATED          // Lease ended
+}
+
+model RentPayment {
+  id                Int      @id @default(autoincrement())
+  tenancy_id        Int
+  tenancy           Tenancy  @relation(fields: [tenancy_id], references: [id], onDelete: Cascade)
+  
+  // Payment Details
+  amount            Float
+  payment_method    PaymentMethod
+  payment_date      DateTime @default(now())
+  
+  // Period
+  for_month         DateTime  
+  
+  // Processing
+  status            PaymentStatus @default(PENDING)
+  transaction_id    String?   
+  
+  // Receipt
+  receipt_url       String?  // PDF  
+  receipt_generated Boolean  @default(false)
+  
+  // System Fields
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+  
+  @@index([tenancy_id])
+  @@index([payment_date])
+  @@index([status])
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  INTERAC
+  PAD            // Pre-authorized debit
+  BANK_TRANSFER
+  CASH
+  CHEQUE
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model ComplianceEvent {
+  id                  Int      @id @default(autoincrement())
+  tenancy_id          Int
+  tenancy             Tenancy  @relation(fields: [tenancy_id], references: [id], onDelete: Cascade)
+  
+  // Event Type
+  event_type          ComplianceEventType
+  form_code           String?  // "N4", "RTB-30", "L1"
+  
+  // Timing
+  issued_date         DateTime @default(now())
+  effective_date      DateTime? // When notice takes effect
+  deadline_date       DateTime? // Deadline for tenant action
+  
+  // Delivery
+  delivery_method     DeliveryMethod?
+  delivered_at        DateTime?
+  tracking_number     String?  // Canada Post/Lob tracking
+  delivery_status     DeliveryStatus @default(PENDING)
+  
+  // Document
+  document_url        String?  // PDF of notice
+  proof_of_service_url String? // Certificate of service
+  
+  // Details
+  amount              Float?   // Arrears amount if applicable
+  grace_period_days   Int?     // Extra days given
+  notes               String?  @db.Text
+  
+  // Status
+  status              EventStatus @default(ISSUED)
+  
+  // Rescission
+  rescinded_at        DateTime?
+  rescission_reason   String?
+  
+  // Audit Trail
+  issued_by           Int      // User ID
+  immutable_hash      String?  // For audit integrity
+  
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+  
+  @@index([tenancy_id])
+  @@index([event_type])
+  @@index([status])
+  @@index([effective_date])
+}
+
+enum ComplianceEventType {
+  RENT_DUE_REMINDER      // Friendly reminder before late
+  RENT_OVERDUE           // Rent is late
+  NON_PAYMENT_NOTICE     // N4, RTB-30, etc.
+  EVICTION_APPLICATION   // L1, L2, Direct Request
+  RENT_INCREASE_NOTICE   // N1, RTB-7
+  LANDLORD_USE_NOTICE    // N12, RTB-8
+  TENANT_TERMINATION     // N9, RTB-33
+  PAYMENT_PLAN_CREATED
+  PAYMENT_RECEIVED
+  NOTICE_RESCINDED
+  DISPUTE_FILED
+  HEARING_SCHEDULED
+  ORDER_ISSUED
+  OTHER
+}
+
+enum DeliveryMethod {
+  ELECTRONIC          // Email/in-app
+  REGISTERED_MAIL     // Canada Post registered
+  CERTIFIED_MAIL      // Lob certified
+  IN_PERSON
+  POSTED_ON_DOOR
+}
+
+enum DeliveryStatus {
+  PENDING
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum EventStatus {
+  DRAFT              // Created but not sent
+  ISSUED             // Sent to tenant
+  DELIVERED          // Confirmed delivery
+  ACKNOWLEDGED       // Tenant acknowledged
+  REMEDIED           // Issue resolved (payment made)
+  RESCINDED          // Cancelled by landlord
+  DISPUTED           // Tenant filed dispute
+  EXPIRED            // Deadline passed
+  COMPLETED          // Process finished
 }
