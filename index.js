@@ -24,20 +24,11 @@ app.use(morgan("dev"))
 app.use(cookieParser())
 
 
-app.get('/',async(req,res)=>{
+app.get('/health',async(req,res)=>{
     res.send("working fine")
 })
 
-app.get("/hello-world", async function (req, res, next) {
-//   const { email, emailConfirm } = req.body 
-    const val = await prisma.user.findMany({
-    take: 10,
-  });
-  console.log(val);
-
-  res.status(200).json({message:"API Working",data:val})
- })
-
+ 
 app.use(`/api/v1`,mainRouter)
 app.use(notFound)
 app.use(errorHandler)
