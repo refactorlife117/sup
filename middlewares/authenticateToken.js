@@ -19,6 +19,7 @@ const authenticateUser = async (req, res, next) => {
     next()
 }
 
+ 
 
 const verifyPermission = async(...role)=>{
     if(role.includes(req.user.role)){

@@ -2,9 +2,8 @@ import express from "express"
 import cors from "cors"
 const app = express()
 import supabaseClient from "./utils/supabase_client.js" 
-import authRouter from "./routes/auth.routes.js"
 import prisma from "./prisma/prismaClient.js"
-
+import mainRouter from "./app.js"
 
 app.use(cors({
     origin: "*",
@@ -25,7 +24,7 @@ app.get("/hello-world", async function (req, res, next) {
   res.status(200).json({message:"API Working",data:val})
  })
 
-app.use(`/api/v1/auth`,authRouter)
+app.use(`/api/v1`,mainRouter)
 app.listen(3000,async()=>{
     console.log("the server is running on port 3000")
 })

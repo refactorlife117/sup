@@ -103,7 +103,8 @@ model Property{
   filled_rooms Int @default(0)
   availability Boolean @default(true)
   is_condominium Boolean @default(false)
-  
+  is_active Boolean @default(true)
+  amenities String[] @default([""])
 
   province_id  Int
   province Province @relation(fields:[province_id],references:[id])
@@ -135,7 +136,7 @@ model Tenancy {
   
   // Tenant Preferences
   electronic_service_consent Boolean @default(false) // RTB Rule 3.1 consent
-  auto_pay_enabled          Boolean  @default(false)
+  auto_pay_enabled           Boolean  @default(false)
   
   // Current Status
   status                    TenancyStatus @default(ACTIVE)
