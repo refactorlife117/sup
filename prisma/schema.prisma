@@ -120,7 +120,7 @@ model Tenancy {
   landlord                  User @relation("LandlordTenancy", fields:[landlord_id], references:[id])
   tenant_id                 Int
   tenant                    User @relation("TenantTenancy", fields:[tenant_id], references:[id])
-  property_id               Int
+  property_id               Int 
   property                  Property @relation(fields:[property_id],references:[id])
   // Property Details
   property_address          String
@@ -150,6 +150,8 @@ model Tenancy {
   rent_payments             RentPayment[]
   compliance_events         ComplianceEvent[]
   
+
+
   @@index([province_id])
   @@index([landlord_id])
   @@index([tenant_id])
